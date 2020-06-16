@@ -5,4 +5,4 @@ of [natchez](https://github.com/tpolecat/natchez) by [Rob Norris](https://github
 
 Just for zio instead of cats.
 
-It's a work in progress. Nothing works yet.
+It's a work in progress. Almost nothing works yet.
