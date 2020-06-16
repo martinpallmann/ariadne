@@ -48,8 +48,11 @@ package object ariadne {
   object Span {
     trait Service {
 
+      /** log a sequence of fields */
+      def log(fields: (String, Any)*): UIO[Unit]
+
       /** Put a sequence of fields into this span. */
-      def put(fields: (String, TraceValue)*): URIO[Span.Service, Unit]
+      def put(fields: (String, TraceValue)*): UIO[Unit]
 
       /**
         * The kernel for this span, which can be sent as headers to remote systems, which can then
@@ -61,8 +64,11 @@ package object ariadne {
       def span(name: String): UManaged[Span.Service]
     }
 
+    def log(fields: (String, Any)*): ZIO[Span, Nothing, Unit] =
+      ZIO.accessM[Span](_.get.log(fields: _*))
+
     def put(fields: (String, TraceValue)*): ZIO[Span, Nothing, Unit] =
-      ZIO.accessM[Span](x => x.get.put(fields: _*).provide(x.get))
+      ZIO.accessM[Span](_.get.put(fields: _*))
 
     def kernel: ZIO[Span, Nothing, Kernel] =
       ZIO.accessM[Span](x => x.get.kernel.provide(x.get))

@@ -9,13 +9,14 @@ package ariadne.examples
 
 import java.io.IOException
 
-import ariadne.{EntryPoint, Kernel, Opentracing, Span}
+import ariadne.{EntryPoint, Kernel, LogFields, Opentracing, Span, Tags}
 import io.opentracing.Tracer.SpanBuilder
 import io.opentracing.{Scope, ScopeManager, SpanContext, Tracer, tag}
 import io.opentracing.mock.{MockSpan, MockTracer}
 import io.opentracing.propagation.Format
 import zio._
 import zio.console._
+
 import scala.jdk.CollectionConverters._
 
 object HelloWorld extends App {
@@ -30,7 +31,15 @@ object HelloWorld extends App {
 
   def print(ts: List[MockSpan]): String = {
     ts.sortBy(_.context().spanId())
-      .map(s => s"$s${s.context().baggageItems().asScala}")
+      .map(
+        s =>
+          s"""|$s
+              |Tags: ${s.tags.asScala.mkString("(", ",", ")")}
+              |Log Entries: ${s.logEntries.asScala
+               .map(_.fields().asScala.mkString("(", ", ", ")"))
+               .mkString(", ")}
+              |""".stripMargin
+      )
       .mkString("\n")
   }
 
@@ -41,12 +50,16 @@ object HelloWorld extends App {
       .tap(_ => putStrLn(print(tracings)))
 
   val logic: ZIO[Span with Console, IOException, Unit] = for {
-    _ <- Span.put("hello" -> "world")
     _ <- Span.span("question") {
       Span.span[Console.Service, Nothing, Unit]("nested") {
         for {
-          _ <- Span.put("hello" -> "world")
           k <- Span.kernel
+          _ <- Span.put(Tags.error(true))
+          _ <- Span.log(
+            LogFields.event("error"),
+            LogFields.error.kind.exception,
+            LogFields.error.obj(new RuntimeException("oops"))
+          )
           _ <- putStrLn(
             "Hi, what's your name?" + k.toHeaders.mkString(" (", ", ", ")")
           )

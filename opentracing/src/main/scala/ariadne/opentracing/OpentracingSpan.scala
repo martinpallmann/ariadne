@@ -20,6 +20,11 @@ private[ariadne] final case class OpentracingSpan(tracer: ot.Tracer,
                                                   span: ot.Span)
     extends Span.Service {
 
+  def log(fields: (String, Any)*): UIO[Unit] =
+    ZIO
+      .succeed(span.log(Map.from(fields).asJava))
+      .as(())
+
   def put(fields: (String, TraceValue)*): UIO[Unit] =
     ZIO
       .foreach(fields) {
