@@ -9,9 +9,9 @@ package ariadne.examples
 
 import java.io.IOException
 
-import ariadne.{EntryPoint, Kernel, Opentracing, Trace}
+import ariadne.{EntryPoint, Kernel, Opentracing, Span, Trace}
 import io.opentracing.Tracer.SpanBuilder
-import io.opentracing.{Scope, ScopeManager, Span, SpanContext, Tracer, tag}
+import io.opentracing.{Scope, ScopeManager, SpanContext, Tracer, tag}
 import io.opentracing.mock.{MockSpan, MockTracer}
 import io.opentracing.propagation.Format
 import zio._
@@ -19,33 +19,34 @@ import zio.console._
 
 object HelloWorld extends App {
 
+  var tracings: List[MockSpan] = List.empty
+
   private val tracer: Any => Tracer = _ =>
     new MockTracer() {
       override def onSpanFinished(mockSpan: MockSpan): Unit =
-        println(mockSpan)
+        tracings = mockSpan :: tracings
   }
 
-  def run(args: List[String]): URIO[ZEnv, ExitCode] =
-    myAppLogic
-      .provideCustomLayer(Opentracing(tracer))
-      .exitCode
+  def print(ts: List[MockSpan]): String =
+    ts.sortBy(x => (x.parentId(), x.context().spanId())).mkString("\n")
 
-  val myAppLogic: ZIO[Console with EntryPoint, Nothing, Unit] =
-    EntryPoint
-      .cont("root", Kernel(Map("spanid" -> "991", "traceid" -> "992"))) {
-        Trace().span("app_logic")(for {
-          _ <- Trace().span("put_str_1")(putStr("Hello! What is your name?"))
-          b <- Trace().kernel
-        } yield System.out.println(b))
+  def run(args: List[String]): URIO[ZEnv, ExitCode] =
+    logic
+      .provideCustomLayer(root("root"))
+      .exitCode
+      .tap(_ => putStrLn(print(tracings)))
+
+  val logic: ZIO[Span with Console, IOException, Unit] = for {
+    _ <- Span.span[Console.Service, Nothing, Unit]("question") {
+      Span.span[Console.Service, Nothing, Unit]("nested") {
+        putStrLn("Hi, what's your name?")
       }
-//      .mapError(_ => new IOException())
-//        .use(
-//          span =>
-//            for {
-//              _ <- putStrLn("Hello! What is your name?")
-//              name <- getStrLn
-//              _ <- putStrLn(s"Hello, ${name}, welcome to ZIO!")
-//            } yield ()
-//        )
+    }
+    x <- Span.span("answer") { getStrLn }
+    _ <- Span.span("response") { putStrLn(s"Hello, $x") }
+  } yield ()
+
+  def root(name: String): ZLayer[Any, Nothing, Span] =
+    Opentracing(tracer) >>> EntryPoint.root(name)
 
 }

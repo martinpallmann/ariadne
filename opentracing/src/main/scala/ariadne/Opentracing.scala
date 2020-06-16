@@ -33,11 +33,12 @@ object Opentracing {
     private def finish(s: ot.Span): ZIO[Any, Nothing, Unit] =
       ZIO.succeed(s.finish())
 
-    def cont(name: String, kernel: Kernel): ZManaged[Any, Nothing, Span] =
+    def cont(name: String,
+             kernel: Kernel): ZManaged[Any, Nothing, Span.Service] =
       Managed
         .make {
           ZIO(extractCtxFrom(kernel))
-            .catchAll(_ => ZIO.succeed(null)) // well, this is probably not nice.
+            .catchAll(_ => ZIO.succeed(null)) // TODO: well, this is probably not nice. Maybe add a debug log?
             .map(ctx => t.buildSpan(name).asChildOf(ctx).start())
         } { finish }
         .map(OpentracingSpan(t, _))

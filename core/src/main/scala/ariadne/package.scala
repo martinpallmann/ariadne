@@ -20,43 +20,54 @@ package object ariadne {
     trait Service {
 
       /** Resource that creates a new root span in a new trace. */
-      def root(name: String): UManaged[Span] = cont(name, Kernel(Map.empty))
+      def root(name: String): UManaged[Span.Service] =
+        cont(name, Kernel(Map.empty))
 
       /**
         * Resource that attempts to creates a new span as with `continue`, but falls back to a new root
         * span as with `root` if the kernel does not contain the required headers. In other words, we
         * continue the existing span if we can, otherwise we start a new one.
         */
-      def cont(name: String, kernel: Kernel): UManaged[Span]
+      def cont(name: String, kernel: Kernel): UManaged[Span.Service]
     }
 
-    def root[E, A](name: String)(k: ZIO[Span, E, A]): ZIO[Has[Service], E, A] =
-      cont(name, Kernel(Map.empty))(k)
+    def root(name: String): ZLayer[EntryPoint, Nothing, Span] =
+      ZLayer.fromFunctionManaged[EntryPoint, Nothing, Span.Service](
+        _.get.root(name)
+      )
 
-    def cont[E, A](name: String, kernel: Kernel)(
-      k: ZIO[Span, E, A]
-    ): ZIO[Has[Service], E, A] =
-      ZIO.accessM[Has[Service]](
-        _.get[Service]
-          .cont(name, kernel)
-          .use(k.provide)
+    def cont(name: String, kernel: Kernel): ZLayer[EntryPoint, Nothing, Span] =
+      ZLayer.fromFunctionManaged[EntryPoint, Nothing, Span.Service](
+        _.get.cont(name, kernel)
       )
   }
 
+  type Span = Has[Span.Service]
+
   /** An span that can be passed around and used to create child spans. */
-  trait Span {
+  object Span {
+    trait Service {
 
-    /** Put a sequence of fields into this span. */
-    def put(fields: (String, TraceValue)*): URIO[Span, Unit]
+      /** Put a sequence of fields into this span. */
+      def put(fields: (String, TraceValue)*): URIO[Span.Service, Unit]
 
-    /**
-      * The kernel for this span, which can be sent as headers to remote systems, which can then
-      * continue this trace by constructing spans that are children of this one.
-      */
-    def kernel: URIO[Span, Kernel]
+      /**
+        * The kernel for this span, which can be sent as headers to remote systems, which can then
+        * continue this trace by constructing spans that are children of this one.
+        */
+      def kernel: URIO[Span.Service, Kernel]
 
-    /** Resource that yields a child span with the given name. */
-    def span(name: String): UManaged[Span]
+      /** Resource that yields a child span with the given name. */
+      def span(name: String): UManaged[Span.Service]
+    }
+
+    def span[R, E, A](name: String)(
+      z: ZIO[Span with Has[R], E, A]
+    )(implicit tr: Tag[R]): ZIO[Span with Has[R], E, A] =
+      ZIO.accessM[Span with Has[R]](
+        x => x.get.span(name).use(s => z.provide(x ++ Has(s)))
+      )
+
   }
 
   /**
@@ -77,16 +88,18 @@ package object ariadne {
   trait Trace {
 
     /** Put a sequence of fields into the current span. */
-    def put(fields: (String, TraceValue)*): URIO[Span, Unit]
+    def put(fields: (String, TraceValue)*): URIO[Span.Service, Unit]
 
     /**
       * The kernel for the current span, which can be sent as headers to remote systems, which can
       * then continue this trace by constructing spans that are children of the current one.
       */
-    def kernel: ZIO[Span, Nothing, Kernel]
+    def kernel: ZIO[Span.Service, Nothing, Kernel]
 
     /** Create a new span, and within it run the continuation `k`. */
-    def span[R, E, A](name: String)(k: ZIO[Span, E, A]): ZIO[Span, E, A]
+    def span[E, A](name: String)(
+      k: ZIO[Span.Service, E, A]
+    ): ZIO[Span.Service, E, A]
   }
 
   object Trace {
@@ -94,23 +107,28 @@ package object ariadne {
     def apply()(implicit ev: Trace): ev.type = ev
 
     implicit def instance: Trace = new Trace {
-      def put(fields: (String, TraceValue)*): URIO[Span, Unit] =
-        ZIO.accessM[Span](_.put(fields: _*))
+      def put(fields: (String, TraceValue)*): URIO[Span.Service, Unit] =
+        ZIO.accessM[Span.Service](_.put(fields: _*))
 
-      def kernel: URIO[Span, Kernel] =
-        ZIO.accessM[Span](_.kernel)
+      def kernel: URIO[Span.Service, Kernel] =
+        ZIO.accessM[Span.Service](_.kernel)
 
-      def span[R, E, A](name: String)(k: ZIO[Span, E, A]): ZIO[Span, E, A] =
-        ZIO.accessM[Span](
+      def span[E, A](
+        name: String
+      )(k: ZIO[Span.Service, E, A]): ZIO[Span.Service, E, A] =
+        ZIO.accessM[Span.Service](
           _.span(name).use(
             s =>
-              k.provideSome[Span](
+              k.provideSome[Span.Service](
                 _ =>
-                  new Span {
-                    def put(fields: (String, TraceValue)*): URIO[Span, Unit] =
+                  new Span.Service {
+                    def put(
+                      fields: (String, TraceValue)*
+                    ): URIO[Span.Service, Unit] =
                       s.put(fields: _*)
-                    def kernel: ZIO[Span, Nothing, Kernel] = s.kernel
-                    def span(name: String): UManaged[Span] = s.span(name)
+                    def kernel: ZIO[Span.Service, Nothing, Kernel] = s.kernel
+                    def span(name: String): UManaged[Span.Service] =
+                      s.span(name)
                 }
             )
           )

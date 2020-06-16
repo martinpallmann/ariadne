@@ -18,7 +18,7 @@ import scala.jdk.CollectionConverters._
 
 private[ariadne] final case class OpentracingSpan(tracer: ot.Tracer,
                                                   span: ot.Span)
-    extends Span {
+    extends Span.Service {
 
   def put(fields: (String, TraceValue)*): UIO[Unit] =
     ZIO
@@ -36,7 +36,7 @@ private[ariadne] final case class OpentracingSpan(tracer: ot.Tracer,
       Kernel(m.asScala.toMap)
     }
 
-  def span(name: String): UManaged[Span] =
+  def span(name: String): UManaged[Span.Service] =
     ZManaged
       .make(ZIO.succeed(tracer.buildSpan(name).asChildOf(span).start()))(
         s => ZIO.succeed(s.finish())

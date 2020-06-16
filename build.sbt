@@ -50,6 +50,7 @@ lazy val opentracing = project
 
 lazy val examples = project
   .enablePlugins(AutomateHeaderPlugin)
+  .enablePlugins(JavaAppPackaging)
   .settings(
     moduleName := "ariadne-examples",
     libraryDependencies ++= Seq(
