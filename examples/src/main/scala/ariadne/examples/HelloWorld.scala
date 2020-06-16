@@ -9,11 +9,9 @@ package ariadne.examples
 
 import java.io.IOException
 
-import ariadne.{EntryPoint, Kernel, LogFields, Opentracing, Span, Tags}
-import io.opentracing.Tracer.SpanBuilder
-import io.opentracing.{Scope, ScopeManager, SpanContext, Tracer, tag}
+import ariadne.{EntryPoint, LogFields, Opentracing, Span, Tags}
+import io.opentracing.Tracer
 import io.opentracing.mock.{MockSpan, MockTracer}
-import io.opentracing.propagation.Format
 import zio._
 import zio.console._
 
