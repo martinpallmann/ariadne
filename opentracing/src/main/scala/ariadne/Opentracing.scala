@@ -7,7 +7,7 @@
 
 package ariadne
 
-import ariadne.opentracing.OpentracingSpan
+import ariadne.TraceValue.{BooleanValue, NumberValue, StringValue}
 import io.{opentracing => ot}
 import io.opentracing.propagation.TextMapAdapter
 import io.opentracing.propagation.Format.Builtin.HTTP_HEADERS
@@ -42,5 +42,37 @@ object Opentracing {
             .map(ctx => t.buildSpan(name).asChildOf(ctx).start())
         } { finish }
         .map(OpentracingSpan(t, _))
+  }
+
+  private final case class OpentracingSpan(tracer: ot.Tracer, span: ot.Span)
+      extends Span.Service {
+
+    def log(fields: (String, Any)*): UIO[Unit] =
+      ZIO
+        .succeed(span.log(Map.from(fields).asJava))
+        .as(())
+
+    def put(fields: (String, TraceValue)*): UIO[Unit] =
+      ZIO
+        .foreach(fields) {
+          case (k, StringValue(v))  => ZIO.succeed(span.setTag(k, v))
+          case (k, NumberValue(v))  => ZIO.succeed(span.setTag(k, v))
+          case (k, BooleanValue(v)) => ZIO.succeed(span.setTag(k, v))
+        }
+        .as(())
+
+    def kernel: UIO[Kernel] =
+      ZIO.succeed {
+        val m = new java.util.HashMap[String, String]
+        tracer.inject(span.context, HTTP_HEADERS, new TextMapAdapter(m))
+        Kernel(m.asScala.toMap)
+      }
+
+    def span(name: String): UManaged[Span.Service] =
+      ZManaged
+        .make(ZIO.succeed(tracer.buildSpan(name).asChildOf(span).start()))(
+          s => ZIO.succeed(s.finish())
+        )
+        .map(OpentracingSpan(tracer, _))
   }
 }
