@@ -61,13 +61,18 @@ package object ariadne {
       def span(name: String): UManaged[Span.Service]
     }
 
+    def put(fields: (String, TraceValue)*): ZIO[Span, Nothing, Unit] =
+      ZIO.accessM[Span](x => x.get.put(fields: _*).provide(x.get))
+
+    def kernel: ZIO[Span, Nothing, Kernel] =
+      ZIO.accessM[Span](x => x.get.kernel.provide(x.get))
+
     def span[R, E, A](name: String)(
       z: ZIO[Span with Has[R], E, A]
     )(implicit tr: Tag[R]): ZIO[Span with Has[R], E, A] =
       ZIO.accessM[Span with Has[R]](
         x => x.get.span(name).use(s => z.provide(x ++ Has(s)))
       )
-
   }
 
   /**
@@ -84,57 +89,6 @@ package object ariadne {
     * to span remote calls.
     */
   final case class Kernel(toHeaders: Map[String, String])
-
-  trait Trace {
-
-    /** Put a sequence of fields into the current span. */
-    def put(fields: (String, TraceValue)*): URIO[Span.Service, Unit]
-
-    /**
-      * The kernel for the current span, which can be sent as headers to remote systems, which can
-      * then continue this trace by constructing spans that are children of the current one.
-      */
-    def kernel: ZIO[Span.Service, Nothing, Kernel]
-
-    /** Create a new span, and within it run the continuation `k`. */
-    def span[E, A](name: String)(
-      k: ZIO[Span.Service, E, A]
-    ): ZIO[Span.Service, E, A]
-  }
-
-  object Trace {
-
-    def apply()(implicit ev: Trace): ev.type = ev
-
-    implicit def instance: Trace = new Trace {
-      def put(fields: (String, TraceValue)*): URIO[Span.Service, Unit] =
-        ZIO.accessM[Span.Service](_.put(fields: _*))
-
-      def kernel: URIO[Span.Service, Kernel] =
-        ZIO.accessM[Span.Service](_.kernel)
-
-      def span[E, A](
-        name: String
-      )(k: ZIO[Span.Service, E, A]): ZIO[Span.Service, E, A] =
-        ZIO.accessM[Span.Service](
-          _.span(name).use(
-            s =>
-              k.provideSome[Span.Service](
-                _ =>
-                  new Span.Service {
-                    def put(
-                      fields: (String, TraceValue)*
-                    ): URIO[Span.Service, Unit] =
-                      s.put(fields: _*)
-                    def kernel: ZIO[Span.Service, Nothing, Kernel] = s.kernel
-                    def span(name: String): UManaged[Span.Service] =
-                      s.span(name)
-                }
-            )
-          )
-        )
-    }
-  }
 
   sealed trait TraceValue extends Product with Serializable {
     def value: Any
