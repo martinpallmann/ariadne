@@ -18,6 +18,10 @@ object LogFields {
     */
   def event(e: String): (String, Any) = ("event", e)
 
+  object event {
+    def error: (String, Any) = event("error")
+  }
+
   /**
     * A concise, human-readable, one-line message explaining the event.
     * E.g., "Could not connect to backend", "Cache invalidation succeeded"
@@ -43,8 +47,8 @@ object LogFields {
     def kind(k: String): (String, Any) = (s"$prefix.kind", k)
 
     object kind {
-      def exception: (String, Any) = (s"$prefix.kind", "Exception")
-      def osError: (String, Any) = (s"$prefix.kind", "OSError")
+      def exception: (String, Any) = kind("Exception")
+      def osError: (String, Any) = kind("OsError")
     }
 
     /**

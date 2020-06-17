@@ -119,6 +119,13 @@ object Tags {
       * and "producer" or "consumer" for the appropriate roles in a messaging scenario.
       */
     def kind(k: String): (String, TraceValue) = ("span.kind", k)
+
+    object kind {
+      def client: (String, TraceValue) = kind("client")
+      def server: (String, TraceValue) = kind("server")
+      def producer: (String, TraceValue) = kind("producer")
+      def consumer: (String, TraceValue) = kind("consumer")
+    }
   }
 
 }
